@@ -59,6 +59,7 @@ data class SenderFilter(
 @Composable
 fun SMSReaderApp() {
     val context = LocalContext.current
+    //special variables that can trigger UI re render
     var hasPermission by remember { mutableStateOf(checkSMSPermission(context)) }
     var messages by remember { mutableStateOf<List<SMSMessage>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -67,6 +68,10 @@ fun SMSReaderApp() {
     var showFilterDialog by remember { mutableStateOf(false) }
     var showAddProviderDialog by remember { mutableStateOf(false) }
     var newProviderName by remember { mutableStateOf("") }
+
+    // Date picker states
+    var showStartDatePicker by remember { mutableStateOf(false) }
+    var showEndDatePicker by remember { mutableStateOf(false) }
 
     // Date range state - default to last 30 days
     val calendar = Calendar.getInstance()
@@ -156,13 +161,7 @@ fun SMSReaderApp() {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             OutlinedButton(
-                                onClick = {
-                                    showDatePicker(
-                                        context = context,
-                                        initialDate = selectedStartDate,
-                                        onDateSelected = { selectedStartDate = it }
-                                    )
-                                },
+                                onClick = { showStartDatePicker = true },
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -174,13 +173,7 @@ fun SMSReaderApp() {
                             Spacer(modifier = Modifier.width(8.dp))
 
                             OutlinedButton(
-                                onClick = {
-                                    showDatePicker(
-                                        context = context,
-                                        initialDate = selectedEndDate,
-                                        onDateSelected = { selectedEndDate = it }
-                                    )
-                                },
+                                onClick = { showEndDatePicker = true },
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -267,6 +260,30 @@ fun SMSReaderApp() {
                 }
             }
         }
+    }
+
+    // Material3 Start Date Picker Dialog
+    if (showStartDatePicker) {
+        Material3DatePickerDialog(
+            initialDate = selectedStartDate,
+            onDateSelected = { selectedDate ->
+                selectedStartDate = selectedDate
+                showStartDatePicker = false
+            },
+            onDismiss = { showStartDatePicker = false }
+        )
+    }
+
+    // Material3 End Date Picker Dialog
+    if (showEndDatePicker) {
+        Material3DatePickerDialog(
+            initialDate = selectedEndDate,
+            onDateSelected = { selectedDate ->
+                selectedEndDate = selectedDate
+                showEndDatePicker = false
+            },
+            onDismiss = { showEndDatePicker = false }
+        )
     }
 
     // Sender Filter Dialog
@@ -402,6 +419,356 @@ fun SMSReaderApp() {
         )
     }
 }
+
+//@OptIn(ExperimentalMaterial3Api::class)
+//@Composable
+//fun SMSReaderApp() {
+//    val context = LocalContext.current
+//    //special variables that can trigger UI re render
+//    var hasPermission by remember { mutableStateOf(checkSMSPermission(context)) }
+//    var messages by remember { mutableStateOf<List<SMSMessage>>(emptyList()) }
+//    var isLoading by remember { mutableStateOf(false) }
+//    var showSnackbar by remember { mutableStateOf(false) }
+//    var snackbarMessage by remember { mutableStateOf("") }
+//    var showFilterDialog by remember { mutableStateOf(false) }
+//    var showAddProviderDialog by remember { mutableStateOf(false) }
+//    var newProviderName by remember { mutableStateOf("") }
+//
+//    // Date range state - default to last 30 days
+//    val calendar = Calendar.getInstance()
+//    val endDate = calendar.timeInMillis
+//    calendar.add(Calendar.DAY_OF_YEAR, -30)
+//    val startDate = calendar.timeInMillis
+//
+//    var selectedStartDate by remember { mutableStateOf(startDate) }
+//    var selectedEndDate by remember { mutableStateOf(endDate) }
+//
+//    // Sender filters - all enabled by default
+//    val defaultSenders = listOf(
+//        "FEDSCP", "HDFC", "ICICI", "AXIS", "SBI", "INDUS", "KOTAK", "CANBNK"
+//    )
+//    var senderFilters by remember {
+//        mutableStateOf(defaultSenders.map { SenderFilter(it, true) })
+//    }
+//
+//    val permissionLauncher = rememberLauncherForActivityResult(
+//        contract = ActivityResultContracts.RequestPermission()
+//    ) { isGranted ->
+//        hasPermission = isGranted
+//        if (isGranted) {
+//            snackbarMessage = "Permission granted!"
+//            showSnackbar = true
+//        } else {
+//            snackbarMessage = "Permission denied. Cannot read SMS."
+//            showSnackbar = true
+//        }
+//    }
+//
+//    val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+//
+//    Scaffold(
+//        topBar = {
+//            TopAppBar(
+//                title = { Text("Bank SMS Reader") },
+//                colors = TopAppBarDefaults.topAppBarColors(
+//                    containerColor = MaterialTheme.colorScheme.primaryContainer
+//                )
+//            )
+//        },
+//        snackbarHost = {
+//            if (showSnackbar) {
+//                Snackbar(
+//                    modifier = Modifier.padding(16.dp),
+//                    action = {
+//                        TextButton(onClick = { showSnackbar = false }) {
+//                            Text("Dismiss")
+//                        }
+//                    }
+//                ) {
+//                    Text(snackbarMessage)
+//                }
+//            }
+//        }
+//    ) { paddingValues ->
+//        Column(
+//            modifier = Modifier
+//                .fillMaxSize()
+//                .padding(paddingValues)
+//                .padding(16.dp)
+//        ) {
+//            if (!hasPermission) {
+//                PermissionRequestScreen(
+//                    onRequestPermission = {
+//                        permissionLauncher.launch(Manifest.permission.READ_SMS)
+//                    }
+//                )
+//            } else {
+//                // Date Range Selection
+//                Card(
+//                    modifier = Modifier.fillMaxWidth(),
+//                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+//                ) {
+//                    Column(
+//                        modifier = Modifier.padding(12.dp)
+//                    ) {
+//                        Text(
+//                            text = "Date Range",
+//                            style = MaterialTheme.typography.titleMedium,
+//                            modifier = Modifier.padding(bottom = 8.dp)
+//                        )
+//
+//                        Row(
+//                            modifier = Modifier.fillMaxWidth(),
+//                            horizontalArrangement = Arrangement.SpaceBetween
+//                        ) {
+//                            OutlinedButton(
+//                                onClick = {
+//                                    showDatePicker(
+//                                        context = context,
+//                                        initialDate = selectedStartDate,
+//                                        onDateSelected = { selectedStartDate = it }
+//                                    )
+//                                },
+//                                modifier = Modifier.weight(1f)
+//                            ) {
+//                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+//                                    Text("Start Date", style = MaterialTheme.typography.labelSmall)
+//                                    Text(dateFormat.format(Date(selectedStartDate)))
+//                                }
+//                            }
+//
+//                            Spacer(modifier = Modifier.width(8.dp))
+//
+//                            OutlinedButton(
+//                                onClick = {
+//                                    showDatePicker(
+//                                        context = context,
+//                                        initialDate = selectedEndDate,
+//                                        onDateSelected = { selectedEndDate = it }
+//                                    )
+//                                },
+//                                modifier = Modifier.weight(1f)
+//                            ) {
+//                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+//                                    Text("End Date", style = MaterialTheme.typography.labelSmall)
+//                                    Text(dateFormat.format(Date(selectedEndDate)))
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
+//
+//                Spacer(modifier = Modifier.height(8.dp))
+//
+//                // Sender Filter Button
+//                OutlinedButton(
+//                    onClick = { showFilterDialog = true },
+//                    modifier = Modifier.fillMaxWidth()
+//                ) {
+//                    val enabledCount = senderFilters.count { it.isEnabled }
+//                    Text("Message Senders ($enabledCount/${senderFilters.size} selected)")
+//                }
+//
+//                Spacer(modifier = Modifier.height(8.dp))
+//
+//                Button(
+//                    onClick = {
+//                        isLoading = true
+//                        val enabledSenders = senderFilters.filter { it.isEnabled }.map { it.name }
+//                        messages = readBankSMS(
+//                            context = context,
+//                            startDate = selectedStartDate,
+//                            endDate = selectedEndDate,
+//                            senders = enabledSenders
+//                        )
+//                        isLoading = false
+//                        snackbarMessage = "Found ${messages.size} messages"
+//                        showSnackbar = true
+//                    },
+//                    modifier = Modifier.fillMaxWidth(),
+//                    enabled = senderFilters.any { it.isEnabled }
+//                ) {
+//                    Text("Load Messages")
+//                }
+//
+//                Spacer(modifier = Modifier.height(8.dp))
+//
+//                if (messages.isNotEmpty()) {
+//                    Button(
+//                        onClick = {
+//                            exportToCSV(context, messages)
+//                            snackbarMessage = "CSV exported successfully!"
+//                            showSnackbar = true
+//                        },
+//                        modifier = Modifier.fillMaxWidth()
+//                    ) {
+//                        Text("Export to CSV")
+//                    }
+//                }
+//
+//                Spacer(modifier = Modifier.height(16.dp))
+//
+//                if (isLoading) {
+//                    Box(
+//                        modifier = Modifier.fillMaxSize(),
+//                        contentAlignment = Alignment.Center
+//                    ) {
+//                        CircularProgressIndicator()
+//                    }
+//                } else {
+//                    Text(
+//                        text = "Messages (${messages.size})",
+//                        style = MaterialTheme.typography.titleMedium,
+//                        modifier = Modifier.padding(bottom = 8.dp)
+//                    )
+//
+//                    LazyColumn(
+//                        modifier = Modifier.fillMaxSize(),
+//                        verticalArrangement = Arrangement.spacedBy(8.dp)
+//                    ) {
+//                        items(messages) { message ->
+//                            MessageCard(message)
+//                        }
+//                    }
+//                }
+//            }
+//        }
+//    }
+//
+//    // Sender Filter Dialog
+//    if (showFilterDialog) {
+//        AlertDialog(
+//            onDismissRequest = { showFilterDialog = false },
+//            title = { Text("Select Message Senders") },
+//            text = {
+//                LazyColumn {
+//                    items(senderFilters.size) { index ->
+//                        val filter = senderFilters[index]
+//                        Row(
+//                            modifier = Modifier
+//                                .fillMaxWidth()
+//                                .padding(vertical = 4.dp),
+//                            verticalAlignment = Alignment.CenterVertically,
+//                            horizontalArrangement = Arrangement.SpaceBetween
+//                        ) {
+//                            Row(
+//                                verticalAlignment = Alignment.CenterVertically,
+//                                modifier = Modifier.weight(1f)
+//                            ) {
+//                                Checkbox(
+//                                    checked = filter.isEnabled,
+//                                    onCheckedChange = { isChecked ->
+//                                        senderFilters = senderFilters.toMutableList().apply {
+//                                            this[index] = filter.copy(isEnabled = isChecked)
+//                                        }
+//                                    }
+//                                )
+//                                Text(
+//                                    text = filter.name,
+//                                    modifier = Modifier.padding(start = 8.dp)
+//                                )
+//                            }
+//                            // Only show delete button for custom providers (not default ones)
+//                            if (!defaultSenders.contains(filter.name)) {
+//                                IconButton(
+//                                    onClick = {
+//                                        senderFilters = senderFilters.toMutableList().apply {
+//                                            removeAt(index)
+//                                        }
+//                                    }
+//                                ) {
+//                                    Text("×", style = MaterialTheme.typography.titleLarge)
+//                                }
+//                            }
+//                        }
+//                    }
+//                    item {
+//                        Spacer(modifier = Modifier.height(8.dp))
+//                        OutlinedButton(
+//                            onClick = { showAddProviderDialog = true },
+//                            modifier = Modifier.fillMaxWidth()
+//                        ) {
+//                            Text("+ Add Custom Provider")
+//                        }
+//                    }
+//                }
+//            },
+//            confirmButton = {
+//                TextButton(onClick = { showFilterDialog = false }) {
+//                    Text("Done")
+//                }
+//            },
+//            dismissButton = {
+//                TextButton(
+//                    onClick = {
+//                        senderFilters = senderFilters.map { it.copy(isEnabled = true) }
+//                    }
+//                ) {
+//                    Text("Select All")
+//                }
+//            }
+//        )
+//    }
+//
+//    // Add Provider Dialog
+//    if (showAddProviderDialog) {
+//        AlertDialog(
+//            onDismissRequest = {
+//                showAddProviderDialog = false
+//                newProviderName = ""
+//            },
+//            title = { Text("Add Custom Provider") },
+//            text = {
+//                Column {
+//                    Text(
+//                        text = "Enter the sender name or keyword to filter:",
+//                        style = MaterialTheme.typography.bodyMedium,
+//                        modifier = Modifier.padding(bottom = 8.dp)
+//                    )
+//                    OutlinedTextField(
+//                        value = newProviderName,
+//                        onValueChange = { newProviderName = it.uppercase() },
+//                        label = { Text("Provider Name") },
+//                        placeholder = { Text("e.g., PAYTM") },
+//                        singleLine = true,
+//                        modifier = Modifier.fillMaxWidth()
+//                    )
+//                }
+//            },
+//            confirmButton = {
+//                TextButton(
+//                    onClick = {
+//                        if (newProviderName.isNotBlank() &&
+//                            !senderFilters.any { it.name.equals(newProviderName, ignoreCase = true) }) {
+//                            senderFilters = senderFilters + SenderFilter(newProviderName.trim(), true)
+//                            snackbarMessage = "Added provider: $newProviderName"
+//                            showSnackbar = true
+//                        } else if (senderFilters.any { it.name.equals(newProviderName, ignoreCase = true) }) {
+//                            snackbarMessage = "Provider already exists"
+//                            showSnackbar = true
+//                        }
+//                        showAddProviderDialog = false
+//                        newProviderName = ""
+//                    },
+//                    enabled = newProviderName.isNotBlank()
+//                ) {
+//                    Text("Add")
+//                }
+//            },
+//            dismissButton = {
+//                TextButton(
+//                    onClick = {
+//                        showAddProviderDialog = false
+//                        newProviderName = ""
+//                    }
+//                ) {
+//                    Text("Cancel")
+//                }
+//            }
+//        )
+//    }
+//}
+
 
 fun showDatePicker(
     context: Context,
@@ -570,6 +937,65 @@ fun exportToCSV(context: Context, messages: List<SMSMessage>) {
 
     // Share the CSV file
     shareCsvFile(context, file)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun Material3DatePickerDialog(
+    initialDate: Long,
+    onDateSelected: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = initialDate
+    )
+
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    datePickerState.selectedDateMillis?.let { selectedDate ->
+                        onDateSelected(selectedDate)
+                    }
+                }
+            ) {
+                Text("OK")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        colors = DatePickerDefaults.colors(
+            // Customize colors to match your theme
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            headlineContentColor = MaterialTheme.colorScheme.onSurface,
+            weekdayContentColor = MaterialTheme.colorScheme.onSurface,
+            subheadContentColor = MaterialTheme.colorScheme.onSurface,
+            yearContentColor = MaterialTheme.colorScheme.onSurface,
+            currentYearContentColor = MaterialTheme.colorScheme.primary,
+            selectedYearContentColor = MaterialTheme.colorScheme.onPrimary,
+            selectedYearContainerColor = MaterialTheme.colorScheme.primary,
+            dayContentColor = MaterialTheme.colorScheme.onSurface,
+            disabledDayContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            selectedDayContentColor = MaterialTheme.colorScheme.onPrimary,
+            disabledSelectedDayContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.38f),
+            selectedDayContainerColor = MaterialTheme.colorScheme.primary,
+            disabledSelectedDayContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+            todayContentColor = MaterialTheme.colorScheme.primary,
+            todayDateBorderColor = MaterialTheme.colorScheme.primary,
+            dayInSelectionRangeContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            dayInSelectionRangeContainerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
+    ) {
+        DatePicker(
+            state = datePickerState,
+            modifier = Modifier.padding(16.dp)
+        )
+    }
 }
 
 fun shareCsvFile(context: Context, file: File) {
