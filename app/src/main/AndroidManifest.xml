@@ -32,6 +32,8 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".KpiActivity" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
