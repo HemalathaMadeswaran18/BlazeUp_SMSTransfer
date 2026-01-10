@@ -27,6 +27,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,6 +105,28 @@ fun SMSReaderApp() {
     }
 
     val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+
+    val uploadCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            // Persist permission so activity can read later
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {
+                // Not all providers allow persistable permissions, ignore
+            }
+
+            val intent = android.content.Intent(context, KpiActivity::class.java).apply {
+                putExtra(KpiActivity.EXTRA_CSV_URI, uri.toString())
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(intent)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -217,6 +240,18 @@ fun SMSReaderApp() {
                 ) {
                     Text("Load Messages")
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        uploadCsvLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "application/csv", "application/vnd.ms-excel"))
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Upload CSV & View KPIs")
+                }
+
 
                 Spacer(modifier = Modifier.height(8.dp))
 
