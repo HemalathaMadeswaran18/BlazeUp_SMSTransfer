@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.Canvas
@@ -32,6 +33,20 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import kotlin.math.pow
+import android.content.Intent
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
+import kotlin.math.absoluteValue
+import androidx.compose.foundation.background
 
 class KpiActivity : ComponentActivity() {
 
@@ -61,6 +76,13 @@ class KpiActivity : ComponentActivity() {
         val yearMonth: YearMonth,
         val total: Double
     )
+
+    private enum class Timeframe(val label: String, val months: Int?) {
+        LAST_3("Last 3 Months", 3),
+        LAST_6("Last 6 Months", 6),
+        LAST_YEAR("Last Year", 12),
+        LIFETIME("Lifetime", null)
+    }
 
     @Composable
     private fun ErrorScreen(msg: String) {
@@ -139,7 +161,10 @@ class KpiActivity : ComponentActivity() {
                             icon = Icons.Filled.Category
                         )
 
-                        MonthlySpendLineChartCard(points = kpis!!.monthlySeries)
+                        MonthlySpendLineChartCard(
+                            csvUri = csvUri,
+                            points = kpis!!.monthlySeries
+                        )
                     }
                 }
             }
@@ -214,14 +239,18 @@ class KpiActivity : ComponentActivity() {
             val sender = row["Sender"] ?: return@mapNotNull null
             val dateStr = row["Date"] ?: return@mapNotNull null
             val amountStr = row["Amount"] ?: return@mapNotNull null
-            val label = row["Label"] ?: "Unknown"
+            val labelRaw = row["Label"] ?: "Unknown"
+            val label = labelRaw.trim()
+
+            // Count as spend only if Label is NOT Personal-income or NON-PAYMENT
+            val labelNorm = label.lowercase(Locale.getDefault())
+            if (labelNorm == "personal-income" || labelNorm == "non-payment") {
+                return@mapNotNull null
+            }
 
             val amount = amountStr.toDoubleOrNull() ?: return@mapNotNull null
             val dt = runCatching { LocalDateTime.parse(dateStr.trim(), dtf) }.getOrNull()
                 ?: return@mapNotNull null
-
-            // If you want ONLY "spent", you can filter out credits here by checking Message/Label/Status.
-            // Example: if (!(row["Message"]?.contains("debited", ignoreCase = true) == true)) return@mapNotNull null
 
             Txn(sender = sender, dateTime = dt, amount = amount, label = label)
         }
@@ -327,17 +356,74 @@ class KpiActivity : ComponentActivity() {
         return result
     }
     @Composable
-    private fun MonthlySpendLineChartCard(points: List<MonthPoint>) {
+    private fun MonthlySpendLineChartCard(csvUri: Uri, points: List<MonthPoint>) {
         if (points.isEmpty()) return
+        // Full series (sorted)
+        val allSorted = points.sortedBy { it.yearMonth }
 
-        val sorted = points.sortedBy { it.yearMonth }
+        // Timeframe dropdown state
+        var timeframe by remember { mutableStateOf(Timeframe.LAST_6) }
+        var menuExpanded by remember { mutableStateOf(false) }
+
+        // Filter series based on timeframe
+        val sorted = remember(allSorted, timeframe) {
+            val m = timeframe.months
+            if (m == null) allSorted else allSorted.takeLast(m)
+        }
+
         val values = sorted.map { it.total }
-        val maxY = (values.maxOrNull() ?: 0.0).coerceAtLeast(1.0)
+        if (sorted.isEmpty()) return
+
+        val rawMin = values.minOrNull() ?: 0.0
+        val rawMax = values.maxOrNull() ?: 0.0
+
+        // "Nice" axis scaling (adds padding and rounds ticks)
+        fun niceNum(range: Double, round: Boolean): Double {
+            if (range <= 0.0) return 1.0
+            val exponent = kotlin.math.floor(kotlin.math.log10(range))
+            val fraction = range / 10.0.pow(exponent)
+            val niceFraction = if (round) {
+                when {
+                    fraction < 1.5 -> 1.0
+                    fraction < 3.0 -> 2.0
+                    fraction < 7.0 -> 5.0
+                    else -> 10.0
+                }
+            } else {
+                when {
+                    fraction <= 1.0 -> 1.0
+                    fraction <= 2.0 -> 2.0
+                    fraction <= 5.0 -> 5.0
+                    else -> 10.0
+                }
+            }
+            return niceFraction * 10.0.pow(exponent)
+        }
+
+        // Tick count: prefer 6 lines (0, 5k, 10k, 15k, 20k, 25k style) for readability
+        val preferredTicks = 6
+        val range = (rawMax - rawMin).coerceAtLeast(1.0)
+        val niceRange = niceNum(range, round = false)
+        val step = niceNum(niceRange / (preferredTicks - 1), round = true)
+        val axisMin = kotlin.math.floor(rawMin / step) * step
+        val axisMax = kotlin.math.ceil(rawMax / step) * step
+        val axisSpan = (axisMax - axisMin).coerceAtLeast(step)
+
+        fun formatMoneyCompact(v: Double): String {
+            val abs = kotlin.math.abs(v)
+            return when {
+                abs >= 1000000 -> "₹" + String.format(Locale.getDefault(), "%.1fM", v / 1000000.0)
+                abs >= 1000 -> "₹" + String.format(Locale.getDefault(), "%.0fk", v / 1000.0)
+                else -> "₹" + String.format(Locale.getDefault(), "%.0f", v)
+            }
+        }
 
         fun formatMonthShort(ym: YearMonth): String {
             val m = ym.month.name.lowercase().replaceFirstChar { it.titlecase() }
             return m.take(3) + " " + ym.year
         }
+
+        val context = LocalContext.current
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -357,19 +443,115 @@ class KpiActivity : ComponentActivity() {
 
                 Spacer(Modifier.height(12.dp))
 
+                // Timeframe dropdown
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Timeframe",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Box {
+                        OutlinedButton(
+                            onClick = { menuExpanded = true },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Text(timeframe.label)
+                            Spacer(Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Filled.ArrowDropDown,
+                                contentDescription = null
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false }
+                        ) {
+                            Timeframe.entries.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    onClick = {
+                                        timeframe = option
+                                        menuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
                 // Move MaterialTheme color reads outside Canvas lambda
                 val outlineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
                 val primaryColor = MaterialTheme.colorScheme.primary
+                val labelArgb = MaterialTheme.colorScheme.onSurface.toArgb()
 
                 Canvas(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(180.dp)
+                        .pointerInput(sorted) {
+                            detectTapGestures { tap ->
+                                // Map tap to nearest plotted point
+                                // We'll compute pts in the draw block and reuse the same math here
+                                val w = size.width
+                                val h = size.height
+
+                                val leftPad = 56f
+                                val rightPad = 12f
+                                val topPad = 12f
+                                val bottomPad = 16f
+
+                                val chartW = (w - leftPad - rightPad).coerceAtLeast(1f)
+                                val chartH = (h - topPad - bottomPad).coerceAtLeast(1f)
+
+                                val n = sorted.size
+                                if (n == 0) return@detectTapGestures
+
+                                val stepX = if (n <= 1) 0f else chartW / (n - 1)
+                                fun xFor(i: Int) = leftPad + i * stepX
+                                fun yFor(v: Double): Float {
+                                    val ratio = ((v - axisMin) / axisSpan).toFloat().coerceIn(0f, 1f)
+                                    return topPad + (1f - ratio) * chartH
+                                }
+
+                                var bestI = -1
+                                var bestD2 = Float.MAX_VALUE
+                                for (i in 0 until n) {
+                                    val px = xFor(i)
+                                    val py = yFor(sorted[i].total)
+                                    val dx = tap.x - px
+                                    val dy = tap.y - py
+                                    val d2 = dx * dx + dy * dy
+                                    if (d2 < bestD2) {
+                                        bestD2 = d2
+                                        bestI = i
+                                    }
+                                }
+
+                                // Only treat as a click if within a reasonable radius (~24dp)
+                                val radiusPx = 48f
+                                if (bestI >= 0 && bestD2 <= radiusPx * radiusPx) {
+                                    val ym = sorted[bestI].yearMonth
+                                    val intent = Intent(context, MonthDetailActivity::class.java).apply {
+                                        putExtra(MonthDetailActivity.EXTRA_CSV_URI, csvUri.toString())
+                                        putExtra(MonthDetailActivity.EXTRA_YEAR_MONTH, ym.toString()) // YearMonth.toString(): YYYY-MM
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            }
+                        }
                 ) {
                     val w = size.width
                     val h = size.height
 
-                    val leftPad = 12f
+                    val leftPad = 56f
                     val rightPad = 12f
                     val topPad = 12f
                     val bottomPad = 16f
@@ -382,8 +564,11 @@ class KpiActivity : ComponentActivity() {
 
                     fun xFor(i: Int) = leftPad + i * stepX
                     fun yFor(v: Double): Float {
-                        val ratio = (v / maxY).toFloat().coerceIn(0f, 1f)
+                        val ratio = ((v - axisMin) / axisSpan).toFloat().coerceIn(0f, 1f)
                         return topPad + (1f - ratio) * chartH
+                    }
+                    val pts = (0 until n).map { i ->
+                        Offset(xFor(i), yFor(sorted[i].total))
                     }
 
                     // Baseline axis (subtle)
@@ -396,26 +581,61 @@ class KpiActivity : ComponentActivity() {
 
                     val path = Path()
                     for (i in 0 until n) {
-                        val x = xFor(i)
-                        val y = yFor(sorted[i].total)
-                        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                        val p = pts[i]
+                        if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
                     }
 
                     // Line
                     drawPath(
                         path = path,
                         color = primaryColor,
-                        style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                        style = Stroke(width = 5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    )
+                    // Y-axis gridlines + labels
+                    val axisPaint = android.graphics.Paint().apply {
+                        isAntiAlias = true
+                        textSize = 24f
+                        color = labelArgb
+                        typeface = android.graphics.Typeface.DEFAULT
+                    }
+
+                    val tickCount = kotlin.math.min(
+                        preferredTicks,
+                        ((axisSpan / step).toInt() + 1).coerceAtLeast(2)
                     )
 
-                    // Points
+                    for (t in 0 until tickCount) {
+                        val v = if (t == tickCount - 1) axisMax else axisMin + t * step
+                        val y = yFor(v)
+
+                        // Gridline
+                        drawLine(
+                            color = outlineColor.copy(alpha = 0.25f),
+                            start = Offset(leftPad, y),
+                            end = Offset(leftPad + chartW, y),
+                            strokeWidth = 1.5f
+                        )
+
+                        // Tick label (left of chart)
+                        val label = formatMoneyCompact(v)
+                        drawIntoCanvas { canvas ->
+                            val textWidth = axisPaint.measureText(label)
+                            canvas.nativeCanvas.drawText(
+                                label,
+                                (leftPad - 10f - textWidth).coerceAtLeast(0f),
+                                (y - 4f).coerceIn(0f, size.height),
+                                axisPaint
+                            )
+                        }
+                    }
+
+                    // Points (no amount text next to dots)
                     for (i in 0 until n) {
-                        val x = xFor(i)
-                        val y = yFor(sorted[i].total)
+                        val p = pts[i]
                         drawCircle(
                             color = primaryColor,
-                            radius = 6f,
-                            center = Offset(x, y)
+                            radius = 8f,
+                            center = p
                         )
                     }
                 }
@@ -443,3 +663,4 @@ class KpiActivity : ComponentActivity() {
     }
 
 }
+
